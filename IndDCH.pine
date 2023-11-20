@@ -1,0 +1,824 @@
+
+//@version=5
+indicator("DCH"
+  , overlay = true
+  , max_labels_count = 500
+  , max_lines_count = 500
+  , max_boxes_count = 500
+  , max_bars_back = 1000)
+//-----------------------------------------------------------------------------{
+//Constants
+//-----------------------------------------------------------------------------{
+color TRANSP_CSS = #ffffff00
+
+//Tooltips
+// string MODE_TOOLTIP          = 'Allows to display historical Structure or only the recent ones'
+// string STYLE_TOOLTIP         = 'Indicator color theme'
+string SHOW_INTERNAL         = 'Detailed structure'
+// string CONFLUENCE_FILTER     = 'Filter non significant internal structure breakouts'
+string SHOW_SWING            = 'Display swing market Structure'
+string SHOW_SWING_POINTS     = 'Show all swings'
+string SHOW_SWHL_POINTS      = 'Most recent HH/HL'
+string PED_ZONES             = 'Display premium, discount, and equilibrium zones on chart'
+
+//-----------------------------------------------------------------------------{
+//Settings
+//-----------------------------------------------------------------------------{
+//General
+//----------------------------------------{
+// mode = input.string('Historical'
+//   , options = ['Historical', 'Present']
+//   , group = 'Smart Money Concepts'
+//   , tooltip = MODE_TOOLTIP)
+
+
+lower_frame = input.timeframe(defval = '', title = 'Lower TF')
+additional_frame_anal = input.bool(false, "Analys")
+style = 'Colored'
+// style = input.string('Colored'
+//   , options = ['Colored', 'Monochrome']
+//   , group = 'Smart Money Concepts'
+//   , tooltip = STYLE_TOOLTIP)
+
+//----------------------------------------}
+//Internal Structure
+//----------------------------------------{
+// show_internals = input(true, 'Show Internal Structure'
+//   , group = 'Real Time Internal Structure'
+//   , tooltip = SHOW_INTERNAL)
+
+show_ibull = 'All'
+// show_ibull = input.string('All', 'Bullish Structure'
+//   , options = ['All', 'BOS', 'CHoCH']
+//   , inline = 'ibull'
+//   , group = 'Real Time Internal Structure')
+
+swing_ibull_css = #089981
+// swing_ibull_css = input(#089981, ''
+//   , inline = 'ibull'
+//   , group = 'Real Time Internal Structure')
+
+//Bear Structure
+
+show_ibear = 'All'
+// show_ibear = input.string('All', 'Bearish Structure'
+//   , options = ['All', 'BOS', 'CHoCH']
+//   , inline = 'ibear'
+//   , group = 'Real Time Internal Structure')
+
+swing_ibear_css = #f23645
+// swing_ibear_css = input(#f23645, ''
+//   , inline = 'ibear'
+//   , group = 'Real Time Internal Structure')
+
+ifilter_confluence = true
+// ifilter_confluence = input(false, 'Confluence Filter'
+//   , group = 'Real Time Internal Structure'
+//   , tooltip = CONFLUENCE_FILTER)
+
+internal_structure_size = 'Tiny'
+// internal_structure_size = input.string('Tiny', 'Internal Label Size'
+//   , options = ['Tiny', 'Small', 'Normal']
+//   , group = 'Real Time Internal Structure')
+
+//----------------------------------------}
+//Swing Structure
+//----------------------------------------{
+show_Structure = input(true, 'Show Structure'
+  , group = 'Swing Structure'
+  , tooltip = SHOW_SWING)
+
+//Bull Structure
+show_bull = 'All'
+// show_bull = input.string('All', 'Bullish Structure'
+//   , options = ['All', 'BOS', 'CHoCH']
+//   , inline = 'bull'
+//   , group = 'Real Time Swing Structure')
+
+swing_bull_css = #089981 
+// swing_bull_css = input(#089981, ''
+//   , inline = 'bull'
+//   , group = 'Real Time Swing Structure')
+
+//Bear Structure
+show_bear = 'All'
+// show_bear = input.string('All', 'Bearish Structure'
+//   , options = ['All', 'BOS', 'CHoCH']
+//   , inline = 'bear'
+//   , group = 'Real Time Swing Structure')
+
+swing_bear_css = #f23645
+// swing_bear_css = input(#f23645, ''
+//   , inline = 'bear'
+//   , group = 'Real Time Swing Structure')
+
+swing_structure_size = 'Small'
+// swing_structure_size = input.string('Small', 'Swing Label Size'
+//   , options = ['Tiny', 'Small', 'Normal']
+//   , group = 'Real Time Swing Structure')
+
+//Swings
+show_swings = input(false, 'Show Swings'
+  , inline = 'swings'
+  , group = 'Swing Structure'
+  , tooltip = SHOW_SWING_POINTS)
+
+// Maximum number of lines and labels to keep (change to 4 if needed)
+max_swings = input.int(50, 'Max Swings'
+  , minval = 10
+  , group = 'Swing Structure')
+
+length = input.int(50, 'Swings Interval'
+  , minval = 10
+  , group = 'Swing Structure')
+  
+// length = input.int(50, ''
+//   , minval = 10
+//   , inline = 'swings'
+//   , group = 'Real Time Swing Structure')
+  
+show_internals = input(true, 'Show Detailed Swings Structure'
+  , group = 'Swing Structure'
+  , tooltip = SHOW_INTERNAL)
+
+show_hl_swings = input(true, 'Show recent H/L'
+  , group = 'Swing Structure'
+  , tooltip = SHOW_SWHL_POINTS)
+
+//----------------------------------------}
+
+
+//----------------------------------------}
+//Premium/Discount zones
+//----------------------------------------{
+show_sd = input(false, 'Premium/Discount Zones'
+  , group = 'Premium & Discount Zones'
+  , tooltip = PED_ZONES)
+
+premium_css = input.color(#f23645, 'Premium Zone'
+  , group = 'Premium & Discount Zones')
+
+eq_css = input.color(#b2b5be, 'EQ Zone'
+  , group = 'Premium & Discount Zones')
+
+discount_css = input.color(#089981, 'Discount Zone'
+  , group = 'Premium & Discount Zones')
+
+//-----------------------------------------------------------------------------}
+//Functions
+//-----------------------------------------------------------------------------{
+n = bar_index
+
+// Global arrays to store line and label references
+var line[] lines = array.new_line(max_swings)
+var label[] labels = array.new_label(max_swings)
+
+findBarIndexByTimestamp(timestamp) =>
+    var int barIndex = na
+    for i = 0 to 499
+        if time[i] == timestamp
+            barIndex := i
+            break
+    barIndex
+// Function to update lines and labels
+updateElements(newLine, newLabel) =>
+    // Add the new line and label to their arrays
+    array.push(lines, newLine)
+    array.push(labels, newLabel)
+    // If the arrays exceed the maximum size
+    if array.size(lines) > max_swings
+        // Delete the oldest line and label
+        line.delete(array.shift(lines))
+        label.delete(array.shift(labels))
+
+
+//Display Structure function
+display_Structure(x, y, txt, css, dashed, down, lbl_size)=>
+    structure_line = line.new(x, y, n, y
+      , color = css
+      , style = dashed ? line.style_dashed : line.style_solid)
+
+    structure_lbl = label.new(int(math.avg(x, n)), y, txt
+      , color = TRANSP_CSS
+      , textcolor = css
+      , style = down ? label.style_label_down : label.style_label_up
+      , size = lbl_size)
+
+    updateElements(structure_line,structure_lbl)
+
+    // if mode == 'Present'
+    //     line.delete(structure_line[1])
+    //     label.delete(structure_lbl[1])
+
+//Swings detection/measurements
+swings(len)=>
+    var os = 0
+    
+    upper = ta.highest(len)
+    lower = ta.lowest(len)
+
+    os := high[len] > upper ? 0 : low[len] < lower ? 1 : os[1]
+
+    top = os == 0 and os[1] != 0 ? high[len] : 0
+    btm = os == 1 and os[1] != 1 ? low[len] : 0
+
+    [top, btm]
+
+
+//-----------------------------------------------------------------------------}
+////Swings detection/measurements from lower timeframe
+requestSwings(tf, length) =>
+  // [top, btm] = request.security(syminfo.tickerid, tf, swings(length), lookahead = barmerge.lookahead_on)
+    [top, btm] = request.security(syminfo.tickerid, tf, swings(length))
+    [top, btm]
+    // [top, btm] = request.security_lower_tf(syminfo.tickerid, tf, swings(length))
+//Global variables
+//-----------------------------------------------------------------------------{
+var trend = 0, var itrend = 0
+
+var top_y = 0., var top_x = 0
+var btm_y = 0., var btm_x = 0
+
+var itop_y = 0., var itop_x = 0
+var ibtm_y = 0., var ibtm_x = 0
+
+var trail_up = high, var trail_dn = low
+var trail_up_x = 0,  var trail_dn_x = 0
+
+var top_cross = true,  var btm_cross = true
+var itop_cross = true, var ibtm_cross = true
+
+var txt_top = '',  var txt_btm = ''
+
+
+
+//Structure colors
+var bull_css = style == 'Monochrome' ? #b2b5be 
+  : swing_bull_css
+
+var bear_css = style == 'Monochrome' ? #b2b5be 
+  : swing_bear_css
+
+var ibull_css = style == 'Monochrome' ? #b2b5be 
+  : swing_ibull_css
+
+var ibear_css = style == 'Monochrome' ? #b2b5be 
+  : swing_ibear_css
+
+//Labels size
+var internal_structure_lbl_size = internal_structure_size == 'Tiny' 
+  ? size.tiny 
+  : internal_structure_size == 'Small' 
+  ? size.small 
+  : size.normal 
+
+var swing_structure_lbl_size = swing_structure_size == 'Tiny' 
+  ? size.tiny 
+  : swing_structure_size == 'Small' 
+  ? size.small 
+  : size.normal 
+
+//Swings
+[top, btm] = swings(length)
+
+[itop, ibtm] = swings(5)
+
+//-----------------------------------------------------------------------------}
+//Pivot High
+//-----------------------------------------------------------------------------{
+var line extend_top = na
+
+var label extend_top_lbl = label.new(na, na
+  , color = TRANSP_CSS
+  , textcolor = bear_css
+  , style = label.style_label_down
+  , size = size.tiny)
+
+if top
+    top_cross := true
+    txt_top := top > top_y ? 'HH' : 'LH'
+
+    if show_swings
+        top_lbl = label.new(n-length, top, txt_top
+          , color = TRANSP_CSS
+          , textcolor = bear_css
+          , style = label.style_label_down
+          , size = swing_structure_lbl_size)
+
+        // if mode == 'Present'
+        //     label.delete(top_lbl[1])
+
+    //Extend recent top to last bar
+    line.delete(extend_top[1])
+    extend_top := line.new(n-length, top, n, top
+      , color = bear_css)
+
+    top_y := top
+    top_x := n - length
+
+    trail_up := top
+    trail_up_x := n - length
+
+if itop
+    itop_cross := true
+
+    itop_y := itop
+    itop_x := n - 5
+
+//Trailing maximum
+trail_up := math.max(high, trail_up)
+trail_up_x := trail_up == high ? n : trail_up_x
+
+//Set top extension label/line
+if barstate.islast and show_hl_swings
+    line.set_xy1(extend_top, trail_up_x, trail_up)
+    line.set_xy2(extend_top, n + 20, trail_up)
+
+    label.set_x(extend_top_lbl, n + 20)
+    label.set_y(extend_top_lbl, trail_up)
+    label.set_text(extend_top_lbl, trend < 0 ? 'Strong High' : 'Weak High')
+
+//-----------------------------------------------------------------------------}
+//Pivot Low
+//-----------------------------------------------------------------------------{
+var line extend_btm = na 
+
+var label extend_btm_lbl = label.new(na, na
+  , color = TRANSP_CSS
+  , textcolor = bull_css
+  , style = label.style_label_up
+  , size = size.tiny)
+
+if btm
+    btm_cross := true
+    txt_btm := btm < btm_y ? 'LL' : 'HL'
+    
+    if show_swings
+        btm_lbl = label.new(n - length, btm, txt_btm
+          , color = TRANSP_CSS
+          , textcolor = bull_css
+          , style = label.style_label_up
+          , size = swing_structure_lbl_size)
+
+        // if mode == 'Present'
+        //     label.delete(btm_lbl[1])
+    
+    //Extend recent btm to last bar
+    line.delete(extend_btm[1])
+    extend_btm := line.new(n - length, btm, n, btm
+      , color = bull_css)
+
+    btm_y := btm
+    btm_x := n-length
+
+    trail_dn := btm
+    trail_dn_x := n-length
+
+if ibtm
+    ibtm_cross := true
+
+    ibtm_y := ibtm
+    ibtm_x := n - 5
+
+//Trailing minimum
+trail_dn := math.min(low, trail_dn)
+trail_dn_x := trail_dn == low ? n : trail_dn_x
+
+//Set btm extension label/line
+if barstate.islast and show_hl_swings
+    line.set_xy1(extend_btm, trail_dn_x, trail_dn)
+    line.set_xy2(extend_btm, n + 20, trail_dn)
+
+    label.set_x(extend_btm_lbl, n + 20)
+    label.set_y(extend_btm_lbl, trail_dn)
+    label.set_text(extend_btm_lbl, trend > 0 ? 'Strong Low' : 'Weak Low')
+
+//-----------------------------------------------------------------------------}
+
+//-----------------------------------------------------------------------------}
+//Pivot High BOS/CHoCH
+//-----------------------------------------------------------------------------{
+//Filtering
+var bull_concordant = true
+
+if ifilter_confluence
+    bull_concordant := high - math.max(close, open) > math.min(close, open - low)
+
+//Detect internal bullish Structure
+if ta.crossover(close, itop_y) and itop_cross and top_y != itop_y and bull_concordant
+    bool choch = na
+    
+    if itrend < 0
+        choch := true
+        // bull_ichoch_alert := true
+    // else 
+    //     bull_ibos_alert := true
+    
+    txt = choch ? 'CHoCH' : 'BOS'
+
+    if show_internals
+        if show_ibull == 'All' or (show_ibull == 'BOS' and not choch) or (show_ibull == 'CHoCH' and choch)
+            display_Structure(itop_x, itop_y, txt, ibull_css, true, true, internal_structure_lbl_size)
+    
+    itop_cross := false
+    itrend := 1
+    
+
+//Detect bullish Structure
+if ta.crossover(close, top_y) and top_cross
+    bool choch = na
+    
+    if trend < 0
+        choch := true
+    //     bull_choch_alert := true
+    // else 
+    //     bull_bos_alert := true
+
+    txt = choch ? 'CHoCH' : 'BOS'
+    
+    if show_Structure
+        if show_bull == 'All' or (show_bull == 'BOS' and not choch) or (show_bull == 'CHoCH' and choch)
+            display_Structure(top_x, top_y, txt, bull_css, false, true, swing_structure_lbl_size)
+    
+
+
+    top_cross := false
+    trend := 1
+
+//-----------------------------------------------------------------------------}
+//Pivot Low BOS/CHoCH
+//-----------------------------------------------------------------------------{
+var bear_concordant = true
+
+if ifilter_confluence
+    bear_concordant := high - math.max(close, open) < math.min(close, open - low)
+
+//Detect internal bearish Structure
+if ta.crossunder(close, ibtm_y) and ibtm_cross and btm_y != ibtm_y and bear_concordant
+    bool choch = false
+    
+    if itrend > 0
+        choch := true
+    //     bear_ichoch_alert := true
+    // else 
+    //     bear_ibos_alert := true
+    
+    txt = choch ? 'CHoCH' : 'BOS'
+
+    if show_internals
+        if show_ibear == 'All' or (show_ibear == 'BOS' and not choch) or (show_ibear == 'CHoCH' and choch)
+            display_Structure(ibtm_x, ibtm_y, txt, ibear_css, true, false, internal_structure_lbl_size)
+    
+    ibtm_cross := false
+    itrend := -1
+  
+
+//Detect bearish Structure
+if ta.crossunder(close, btm_y) and btm_cross
+    bool choch = na
+    
+    if trend > 0
+        choch := true
+    //     bear_choch_alert := true
+    // else 
+    //     bear_bos_alert := true
+
+    txt = choch ? 'CHoCH' : 'BOS'
+    
+    if show_Structure
+        if show_bear == 'All' or (show_bear == 'BOS' and not choch) or (show_bear == 'CHoCH' and choch)
+            display_Structure(btm_x, btm_y, txt, bear_css, false, false, swing_structure_lbl_size)
+    
+
+    btm_cross := false
+    trend := -1
+
+
+//-----------------------------------------------------------------------------}
+
+//Premium/Discount/Equilibrium zones
+//-----------------------------------------------------------------------------{
+var premium = box.new(na, na, na, na
+  , bgcolor = color.new(premium_css, 80)
+  , border_color = na)
+
+var premium_lbl = label.new(na, na
+  , text = 'Premium'
+  , color = TRANSP_CSS
+  , textcolor = premium_css
+  , style = label.style_label_down
+  , size = size.small)
+
+// var eq = box.new(na, na, na, na
+//   , bgcolor = color.rgb(120, 123, 134, 80)
+//   , border_color = na)
+
+var eq_lbl = label.new(na, na
+  , text = na
+  , color = TRANSP_CSS
+  , textcolor = eq_css
+  , style = label.style_label_left
+  , size = size.small)
+
+var discount = box.new(na, na, na, na
+  , bgcolor = color.new(discount_css, 80)
+  , border_color = na)
+
+var discount_lbl = label.new(na, na
+  , text = 'Discount'
+  , color = TRANSP_CSS
+  , textcolor = discount_css
+  , style = label.style_label_up
+  , size = size.small)
+
+//Show Premium/Discount Areas
+// if barstate.islast and show_sd
+//     avg = math.avg(trail_up, trail_dn)
+
+//     box.set_lefttop(premium, math.max(top_x, btm_x), trail_up)
+//     box.set_rightbottom(premium, n, .95 * trail_up + .05 * trail_dn)
+
+//     label.set_xy(premium_lbl, int(math.avg(math.max(top_x, btm_x), n)), trail_up)
+
+//     box.set_lefttop(eq, math.max(top_x, btm_x), .525 * trail_up + .475*trail_dn)
+//     box.set_rightbottom(eq, n, .525 * trail_dn + .475 * trail_up)
+
+//     label.set_xy(eq_lbl, n, avg)
+    
+//     box.set_lefttop(discount, math.max(top_x, btm_x), .95 * trail_dn + .05 * trail_up)
+//     box.set_rightbottom(discount, n, trail_dn)
+//     label.set_xy(discount_lbl, int(math.avg(math.max(top_x, btm_x), n)), trail_dn)
+
+  
+
+
+var line eq_line = na
+
+if barstate.islast and show_sd
+    avg = math.avg(trail_up, trail_dn)
+
+    log.error("{0}", trend)
+    // Проверка текущего тренда
+    if trend == -1
+        // Восходящий тренд: Discount сверху, Premium снизу
+        box.set_lefttop(discount, math.max(top_x, btm_x), trail_up)
+        box.set_rightbottom(discount, n + 300, avg)
+        label.set_xy(discount_lbl, int(math.avg(math.max(top_x, btm_x), n + 300)), trail_up)
+
+        box.set_lefttop(premium, math.max(top_x, btm_x), avg)
+        box.set_rightbottom(premium, n + 300, trail_dn)
+        label.set_xy(premium_lbl, int(math.avg(math.max(top_x, btm_x), n + 300)), trail_dn)
+
+    else
+        // Нисходящий тренд: Premium сверху, Discount снизу
+        box.set_lefttop(premium, math.max(top_x, btm_x), trail_up)
+        box.set_rightbottom(premium, n + 300, avg)
+        label.set_xy(premium_lbl, int(math.avg(math.max(top_x, btm_x), n + 300)), trail_up)
+
+        box.set_lefttop(discount, math.max(top_x, btm_x), avg)
+        box.set_rightbottom(discount, n + 300, trail_dn)
+        label.set_xy(discount_lbl, int(math.avg(math.max(top_x, btm_x), n + 300)), trail_dn)
+
+    // Создание линии Equilibrium
+    line.delete(eq_line[1])
+    eq_line := line.new(math.max(top_x, btm_x), avg, n + 300, avg, color=eq_css, width=1)
+    label.set_xy(eq_lbl, n + 300, avg)
+//-----------------------------------------------------------------------------}
+// if barstate.islast and show_sd
+//     avg = math.avg(trail_up, trail_dn)
+
+//     // Создание зоны Premium
+//     box.set_lefttop(premium, math.max(top_x, btm_x), trail_up)
+//     box.set_rightbottom(premium, n + 300, avg)
+//     label.set_xy(premium_lbl, int(math.avg(math.max(top_x, btm_x), n + 300)), trail_up)
+
+//     // Создание линии Equilibrium
+//     line.delete(eq_line[1]) // Удаляем предыдущую линию Equilibrium, если она существует
+//     eq_line := line.new(math.max(top_x, btm_x), avg, n + 300, avg, color=eq_css, width=1)
+//     label.set_xy(eq_lbl, n + 300, avg)
+    
+//     // Создание зоны Discount
+//     box.set_lefttop(discount, math.max(top_x, btm_x), avg)
+//     box.set_rightbottom(discount, n + 300, trail_dn)
+//     label.set_xy(discount_lbl, int(math.avg(math.max(top_x, btm_x), n + 300)), trail_dn)
+//Alerts
+//-----------------------------------------------------------------------------{
+// alertcondition(bull_ichoch_alert, 'Internal Bullish CHoCH', 'Internal Bullish CHoCH formed')
+
+//-----------------------------------------------------------------------------}
+process_tf(timeframe) =>
+    n_lt = request.security(syminfo.tickerid, timeframe, bar_index)
+    open_lt = request.security(syminfo.tickerid, timeframe, open)
+    high_lt = request.security(syminfo.tickerid, timeframe, high)
+    low_lt = request.security(syminfo.tickerid, timeframe, low)
+    close_lt = request.security(syminfo.tickerid, timeframe, close)
+    
+    var trend_lt = 0, var itrend_lt = 0
+
+    var top_y_lt = 0., var top_x_lt = 0
+    var btm_y_lt = 0., var btm_x_lt = 0
+
+    var trail_up_lt = high_lt, var trail_dn_lt = low_lt
+    var trail_up_x_lt = 0,  var trail_dn_x_lt = 0
+
+    var top_cross_lt = true,  var btm_cross_lt = true
+    var itop_cross_lt = true, var ibtm_cross_lt = true
+
+    var txt_top_lt = '',  var txt_btm_lt = ''
+
+    [top_lt, btm_lt] = requestSwings(timeframe,length)
+
+
+    var line extend_top_lt = na
+
+    var label extend_top_lbl_lt = label.new(na, na
+      , color = TRANSP_CSS
+      , textcolor = bear_css
+      , style = label.style_label_down
+      , size = size.tiny)
+
+    if top_lt
+        top_cross_lt := true
+        // txt_top_lt := top_lt > top_y_lt ? 'HH' : 'LH'
+
+        // if show_swings
+        //     top_lbl_lt = label.new(n_lt-length, top_lt, txt_top_lt
+        //       , color = TRANSP_CSS
+        //       , textcolor = bear_css
+        //       , style = label.style_label_down
+        //       , size = swing_structure_lbl_size)
+
+        line.delete(extend_top_lt[1])
+        extend_top_lt := line.new(n_lt-length, top_lt, n_lt, top_lt
+          , color = bear_css)
+
+        top_y_lt := top_lt
+        top_x_lt := n_lt - length
+
+        trail_up_lt := top_lt
+        trail_up_x_lt := n_lt - length
+
+
+    trail_up_lt := math.max(high_lt, trail_up_lt)
+    trail_up_x_lt := trail_up_lt == high_lt ? n_lt : trail_up_x_lt
+
+    var line extend_btm_lt = na 
+
+    var label extend_btm_lbl_lt = label.new(na, na
+      , color = TRANSP_CSS
+      , textcolor = bull_css
+      , style = label.style_label_up
+      , size = size.tiny)
+
+    if btm_lt
+        btm_cross_lt := true
+        // txt_btm_lt := btm_lt < btm_y_lt ? 'LL' : 'HL'
+
+        // if show_swings
+        //     btm_lbl_lt = label.new(n_lt - length, btm_lt, txt_btm_lt
+        //       , color = TRANSP_CSS
+        //       , textcolor = bull_css
+        //       , style = label.style_label_up
+        //       , size = swing_structure_lbl_size)
+
+        line.delete(extend_btm_lt[1])
+        extend_btm_lt := line.new(n_lt - length, btm_lt, n_lt, btm_lt
+          , color = bull_css)
+
+        btm_y_lt := btm_lt
+        btm_x_lt := n_lt-length
+
+        trail_dn_lt := btm_lt
+        trail_dn_x_lt := n_lt-length
+
+
+    if ta.crossover(close_lt, top_y_lt) and top_cross_lt
+        bool choch_lt = na
+        
+        if trend_lt < 0
+            choch_lt := true
+        // Логика для оповещений, если необходимо
+
+        top_cross_lt := false
+        trend_lt := 1
+
+    // Детектирование медвежьей структуры
+    if ta.crossunder(close_lt, btm_y_lt) and btm_cross_lt
+        bool choch_lt = na
+        
+        if trend_lt > 0
+            choch_lt := true
+        // Логика для оповещений, если необходимо
+
+        btm_cross_lt := false
+        trend_lt := -1
+
+    var premium_lt = box.new(na, na, na, na
+      , bgcolor = color.new(premium_css, 80)
+      , border_color = na)
+
+    var premium_lbl_lt = label.new(na, na
+      , text = 'Premium'
+      , color = TRANSP_CSS
+      , textcolor = premium_css
+      , style = label.style_label_down
+      , size = size.small)
+
+    var discount_lt = box.new(na, na, na, na
+      , bgcolor = color.new(discount_css, 80)
+      , border_color = na)
+
+    var discount_lbl_lt = label.new(na, na
+      , text = 'Discount'
+      , color = TRANSP_CSS
+      , textcolor = discount_css
+      , style = label.style_label_up
+      , size = size.small)
+
+    var eq_lbl_lt = label.new(na, na
+      , text = na
+      , color = TRANSP_CSS
+      , textcolor = eq_css
+      , style = label.style_label_left
+      , size = size.small)
+
+    var line eq_line_lt = na
+    
+      // Получение временных меток для индексов top_x_lt и btm_x_lt
+    topTime_lt = request.security(syminfo.tickerid, timeframe, time[top_x_lt],lookahead =  barmerge.lookahead_on)
+    btmTime_lt = request.security(syminfo.tickerid, timeframe, time[btm_x_lt],lookahead = barmerge.lookahead_on)
+    // topTime_lt = 123124
+    // btmTime_lt = 24242141212
+    // Преобразование временных меток в индексы текущего таймфрейма
+    topIndexCurrentTF = findBarIndexByTimestamp(topTime_lt)
+    btmIndexCurrentTF = findBarIndexByTimestamp(btmTime_lt)
+
+    var int leftIndex = na
+    // Отрисовка зон Premium и Discount
+    if barstate.islast and show_sd
+        avg_lt = math.avg(trail_up_lt, trail_dn_lt)
+        if topIndexCurrentTF != na and btmIndexCurrentTF != na
+            leftIndex := math.max(topIndexCurrentTF, btmIndexCurrentTF)
+
+        rightIndex = n + 300 // Пример правого индекса
+
+        // Отрисовка зон
+        if trend_lt == -1
+            // Зона Discount
+            box.set_lefttop(discount_lt, leftIndex, trail_up_lt)
+            box.set_rightbottom(discount_lt, rightIndex, avg_lt)
+            label.set_xy(discount_lbl_lt, leftIndex, trail_up_lt)
+
+            // Зона Premium
+            box.set_lefttop(premium_lt, leftIndex, avg_lt)
+            box.set_rightbottom(premium_lt, rightIndex, trail_dn_lt)
+            label.set_xy(premium_lbl_lt, leftIndex, avg_lt)
+
+        else
+
+            box.set_lefttop(premium_lt, leftIndex, trail_up_lt)
+            box.set_rightbottom(premium_lt, rightIndex, avg_lt)
+            label.set_xy(premium_lbl_lt, int(math.avg(leftIndex, rightIndex)), trail_up_lt)
+
+            // Зона Discount
+            box.set_lefttop(discount_lt, leftIndex, avg_lt)
+            box.set_rightbottom(discount_lt, rightIndex, trail_dn_lt)
+            label.set_xy(discount_lbl_lt, int(math.avg(leftIndex, rightIndex)), trail_dn_lt)
+
+        // Отрисовка линии Equilibrium
+        line.delete(eq_line_lt[1])
+        eq_line_lt := line.new(leftIndex, avg_lt, rightIndex, avg_lt, color=eq_css, width=1)
+        label.set_xy(eq_lbl_lt, rightIndex, avg_lt)
+
+    // Отрисовка зон
+    // if barstate.islast and show_sd
+    //     avg_lt = math.avg(trail_up_lt, trail_dn_lt)
+        
+    //     if trend_lt == -1
+    //         box.set_lefttop(discount_lt, math.max(top_x_lt, btm_x_lt), trail_up_lt)
+    //         box.set_rightbottom(discount_lt, n_lt + 300, avg_lt)
+    //         label.set_xy(discount_lbl_lt, int(math.avg(math.max(top_x_lt, btm_x_lt), n_lt + 300)), trail_up_lt)
+
+    //         box.set_lefttop(premium_lt, math.max(top_x_lt, btm_x_lt), avg_lt)
+    //         box.set_rightbottom(premium_lt, n_lt + 300, trail_dn_lt)
+    //         label.set_xy(premium_lbl_lt, int(math.avg(math.max(top_x_lt, btm_x_lt), n_lt + 300)), trail_dn_lt)
+
+    //     else
+    //         box.set_lefttop(premium_lt, math.max(top_x_lt, btm_x_lt), trail_up_lt)
+    //         box.set_rightbottom(premium_lt, n_lt + 300, avg_lt)
+    //         label.set_xy(premium_lbl_lt, int(math.avg(math.max(top_x_lt, btm_x_lt), n_lt + 300)), trail_up_lt)
+
+    //         box.set_lefttop(discount_lt, math.max(top_x_lt, btm_x_lt), avg_lt)
+    //         box.set_rightbottom(discount_lt, n_lt + 300, trail_dn_lt)
+    //         label.set_xy(discount_lbl_lt, int(math.avg(math.max(top_x_lt, btm_x_lt), n_lt + 300)), trail_dn_lt)
+
+    //     line.delete(eq_line_lt[1])
+    //     eq_line_lt := line.new(math.max(top_x_lt, btm_x_lt), avg_lt, n_lt + 300, avg_lt, color=eq_css, width=1)
+    //     label.set_xy(eq_lbl_lt, n_lt + 300, avg_lt)
+
+
+
+
+
+if additional_frame_anal
+    process_tf(lower_frame)
